@@ -185,7 +185,8 @@ func processBlocks(B []block, time, memory, threads uint32, mode int) {
 	segments := lanes / syncPoints
 
 	processSegment := func(n, slice, lane uint32, wg *sync.WaitGroup) {
-		var addresses, in, zero, scratch block
+		var addresses, in, zero block
+		var scratch scratchBlock
 		var preRef uint32
 		var havePre bool
 		if mode == argon2i || (mode == argon2id && n == 0 && slice < syncPoints/2) {

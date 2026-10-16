@@ -11,7 +11,20 @@ import "golang.org/x/sys/cpu"
 func init() {
 	useSSE4 = cpu.X86.HasSSE41
 	useAVX2 = cpu.X86.HasAVX2
+	useAVX512 = cpu.X86.HasAVX512F
 }
+
+// The AVX512 variants compute the same as the AVX2 ones using 512-bit
+// vectors (AVX512F).
+
+//go:noescape
+func processBlockAVX512(out, in1, in2 *block, xor bool)
+
+//go:noescape
+func blockStage1AVX512(out, in1, in2 *block, scratch *scratchBlock, xor bool)
+
+//go:noescape
+func blockStage2AVX512(out, in1, in2 *block, scratch *scratchBlock, xor bool)
 
 //go:noescape
 func processBlockAVX2(out, in1, in2 *block, xor bool)
@@ -71,6 +84,10 @@ func processBlockSSE(out, in1, in2 *block, xor bool) {
 }
 
 func processBlock(out, in1, in2 *block) {
+	if useAVX512 {
+		processBlockAVX512(out, in1, in2, false)
+		return
+	}
 	if useAVX2 {
 		processBlockAVX2(out, in1, in2, false)
 		return
@@ -79,6 +96,10 @@ func processBlock(out, in1, in2 *block) {
 }
 
 func processBlockXOR(out, in1, in2 *block) {
+	if useAVX512 {
+		processBlockAVX512(out, in1, in2, true)
+		return
+	}
 	if useAVX2 {
 		processBlockAVX2(out, in1, in2, true)
 		return
@@ -89,12 +110,19 @@ func processBlockXOR(out, in1, in2 *block) {
 // processBlockXORMid computes out (^)= G(in1, in2) like processBlockXOR (or
 // processBlock if !xor) and calls mid once out[0] is final, before the
 // computation has finished.
-func processBlockXORMid(out, in1, in2, scratch *block, xor bool, mid func()) {
+func processBlockXORMid(out, in1, in2 *block, scratch *scratchBlock, xor bool, mid func()) {
+	if useAVX512 {
+		blockStage1AVX512(out, in1, in2, scratch, xor)
+		mid()
+		blockStage2AVX512(out, in1, in2, scratch, xor)
+		return
+	}
 	if !useAVX2 {
 		processBlockXORMidGeneric(out, in1, in2, xor, mid)
 		return
 	}
-	blockStage1(out, in1, in2, scratch, xor)
+	s := (*block)(scratch[:blockLength])
+	blockStage1(out, in1, in2, s, xor)
 	mid()
-	blockStage2(out, in1, in2, scratch, xor)
+	blockStage2(out, in1, in2, s, xor)
 }

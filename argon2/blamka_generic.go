@@ -9,6 +9,16 @@ var useSSE4 bool
 // useAVX2 reports whether the amd64 AVX2 implementation should be used.
 var useAVX2 bool
 
+// useAVX512 reports whether the amd64 AVX-512 implementation should be used.
+// It takes precedence over useAVX2.
+var useAVX512 bool
+
+// scratchBlock is the scratch space of the implementations that split the
+// computation of a block in two stages. It has room for a block aligned to 64
+// bytes, which the assembly aligns itself to (a Go value is only 8-byte
+// aligned).
+type scratchBlock [blockLength + 8]uint64
+
 // prefetchDist is how many blocks ahead the reference block is prefetched in
 // data-independent mode, where the addresses are known in advance.
 const prefetchDist = 2

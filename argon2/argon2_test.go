@@ -25,7 +25,17 @@ var (
 func TestArgon2(t *testing.T) {
 	defer func(sse4 bool) { useSSE4 = sse4 }(useSSE4)
 	defer func(avx2 bool) { useAVX2 = avx2 }(useAVX2)
+	defer func(avx512 bool) { useAVX512 = avx512 }(useAVX512)
 	defer func(lsx bool) { useLSX = lsx }(useLSX)
+
+	if useAVX512 {
+		t.Log("AVX512 version")
+		testArgon2i(t)
+		testArgon2d(t)
+		testArgon2id(t)
+		TestVectors(t)
+		useAVX512 = false
+	}
 
 	if useAVX2 {
 		t.Log("AVX2 version")

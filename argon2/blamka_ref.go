@@ -14,7 +14,7 @@ func processBlockXOR(out, in1, in2 *block) {
 	processBlockGeneric(out, in1, in2, true)
 }
 
-func processBlockXORMid(out, in1, in2, scratch *block, xor bool, mid func()) {
+func processBlockXORMid(out, in1, in2 *block, scratch *scratchBlock, xor bool, mid func()) {
 	processBlockXORMidGeneric(out, in1, in2, xor, mid)
 }
 

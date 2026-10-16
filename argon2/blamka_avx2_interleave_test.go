@@ -14,54 +14,84 @@ import (
 	"time"
 )
 
-var interleave = flag.Duration("argon2.interleave", 0, "if non-zero, run TestInterleaveAVX2vsSSE4 for this long")
+var interleave = flag.Duration("argon2.interleave", 0, "if non-zero, run TestInterleave for this long")
 
-// TestInterleaveAVX2vsSSE4 compares the AVX2 and SSE4.1 implementations on
+// TestInterleave compares the amd64 implementations available on this CPU on
 // the OWASP-recommended Argon2id parameters (m=47104 KiB, t=1, p=1),
-// alternating one hash of each so that host load drift affects both equally.
-// It reports throughput and p50/p95 latency and checks that the outputs agree.
-// It is skipped unless -argon2.interleave is set. For stable numbers pin to
-// one core, for example:
+// alternating one hash of each in turn so that host load drift affects all
+// equally. It reports throughput and p50/p95 latency per implementation and
+// checks that the outputs agree. It is skipped unless -argon2.interleave is
+// set. For stable numbers pin to one core, for example:
 //
-//	GOMAXPROCS=1 taskset -c 2 go test -run TestInterleaveAVX2vsSSE4 \
+//	GOMAXPROCS=1 taskset -c 2 go test -run TestInterleave$ \
 //		-argon2.interleave=60s -v -timeout 10m
-func TestInterleaveAVX2vsSSE4(t *testing.T) {
+func TestInterleave(t *testing.T) {
 	if *interleave == 0 {
 		t.Skip("set -argon2.interleave=<duration> to run")
 	}
-	if !useAVX2 || !useSSE4 {
-		t.Skip("needs both AVX2 and SSE4.1")
+	defer func(sse4, avx2, avx512 bool) {
+		useSSE4, useAVX2, useAVX512 = sse4, avx2, avx512
+	}(useSSE4, useAVX2, useAVX512)
+
+	type impl struct {
+		name      string
+		ok        bool
+		set       func()
+		latencies []time.Duration
 	}
-	defer func(avx2 bool) { useAVX2 = avx2 }(useAVX2)
+	impls := []*impl{
+		{"SSE4.1", useSSE4, func() { useAVX2, useAVX512 = false, false }, nil},
+		{"AVX2", useAVX2, func() { useAVX2, useAVX512 = true, false }, nil},
+		{"AVX512", useAVX512, func() { useAVX2, useAVX512 = false, true }, nil},
+	}
+	var active []*impl
+	for _, im := range impls {
+		if im.ok {
+			active = append(active, im)
+		}
+	}
+	if len(active) < 2 {
+		t.Skip("needs at least two implementations")
+	}
 
 	password, salt := []byte("password"), []byte("choosing random salts is hard")
-	var lat [2][]time.Duration // index 0: SSE4.1, 1: AVX2
-	hash := func(i int, record bool) []byte {
-		useAVX2 = i == 1
+	hash := func(im *impl, record bool) []byte {
+		im.set()
 		start := time.Now()
 		key := IDKey(password, salt, 1, 47104, 1, 32)
 		if record {
-			lat[i] = append(lat[i], time.Since(start))
+			im.latencies = append(im.latencies, time.Since(start))
 		}
 		return key
 	}
 
-	hash(0, false)
-	hash(1, false)
+	for _, im := range active {
+		hash(im, false)
+	}
 	for start := time.Now(); time.Since(start) < *interleave; {
-		sse, avx := hash(0, true), hash(1, true)
-		if !bytes.Equal(sse, avx) {
-			t.Fatal("SSE4.1 and AVX2 outputs differ")
+		var first []byte
+		for _, im := range active {
+			key := hash(im, true)
+			if first == nil {
+				first = key
+			} else if !bytes.Equal(first, key) {
+				t.Fatalf("%s output differs from %s", im.name, active[0].name)
+			}
 		}
 	}
-	for i, name := range []string{"SSE4.1", "AVX2"} {
-		s := lat[i]
+	var base float64
+	for i, im := range active {
+		s := im.latencies
 		var total time.Duration
 		for _, d := range s {
 			total += d
 		}
 		sort.Slice(s, func(a, b int) bool { return s[a] < s[b] })
-		t.Logf("%-6s hashes=%d hash/s=%.2f p50=%v p95=%v", name, len(s),
-			float64(len(s))/total.Seconds(), s[len(s)/2], s[len(s)*95/100])
+		rate := float64(len(s)) / total.Seconds()
+		if i == 0 {
+			base = rate
+		}
+		t.Logf("%-9s hashes=%d hash/s=%.2f (%.2fx) p50=%v p95=%v", im.name, len(s),
+			rate, rate/base, s[len(s)/2], s[len(s)*95/100])
 	}
 }
