@@ -6,6 +6,24 @@ package argon2
 
 var useSSE4 bool
 
+// useAVX2 reports whether the amd64 AVX2 implementation should be used.
+var useAVX2 bool
+
+// prefetchDist is how many blocks ahead the reference block is prefetched in
+// data-independent mode, where the addresses are known in advance.
+const prefetchDist = 2
+
+// processBlockXORMidGeneric is the processBlockXORMid fallback for
+// implementations that cannot split the computation.
+func processBlockXORMidGeneric(out, in1, in2 *block, xor bool, mid func()) {
+	if xor {
+		processBlockXOR(out, in1, in2)
+	} else {
+		processBlock(out, in1, in2)
+	}
+	mid()
+}
+
 // useLSX reports whether the loong64 LSX vector implementation should be
 // used. It is set from cpu.Loong64.HasLSX in blamka_loong64.go's init().
 var useLSX bool

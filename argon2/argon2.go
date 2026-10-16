@@ -185,7 +185,9 @@ func processBlocks(B []block, time, memory, threads uint32, mode int) {
 	segments := lanes / syncPoints
 
 	processSegment := func(n, slice, lane uint32, wg *sync.WaitGroup) {
-		var addresses, in, zero block
+		var addresses, in, zero, scratch block
+		var preRef uint32
+		var havePre bool
 		if mode == argon2i || (mode == argon2id && n == 0 && slice < syncPoints/2) {
 			in[0] = uint64(n)
 			in[1] = uint64(lane)
@@ -219,11 +221,37 @@ func processBlocks(B []block, time, memory, threads uint32, mode int) {
 					processBlock(&addresses, &addresses, &zero)
 				}
 				random = addresses[index%blockLength]
+				// The addresses of the next blocks are already known: prefetch
+				// their reference blocks (within this address block).
+				if j := index + prefetchDist; j < segments && j%blockLength > index%blockLength {
+					prefetchBlock(&B[indexAlpha(addresses[j%blockLength], lanes, segments, threads, n, slice, lane, j)])
+				}
 			} else {
-				random = B[prev][0]
+				// Data-dependent addressing: the reference block of the next
+				// iteration is determined by the first word of the block being
+				// computed now. Compute it as soon as that word is final and
+				// prefetch the block while the rest of this one is processed.
+				if !havePre {
+					random = B[prev][0]
+					preRef = indexAlpha(random, lanes, segments, threads, n, slice, lane, index)
+				}
+				cur, ref := offset, preRef
+				havePre = index+1 < segments
+				processBlockXORMid(&B[cur], &B[prev], &B[ref], &scratch, n > 0, func() {
+					if havePre {
+						preRef = indexAlpha(B[cur][0], lanes, segments, threads, n, slice, lane, index+1)
+						prefetchBlock(&B[preRef])
+					}
+				})
+				index, offset = index+1, offset+1
+				continue
 			}
 			newOffset := indexAlpha(random, lanes, segments, threads, n, slice, lane, index)
-			processBlockXOR(&B[offset], &B[prev], &B[newOffset])
+			if n > 0 {
+				processBlockXOR(&B[offset], &B[prev], &B[newOffset])
+			} else {
+				processBlock(&B[offset], &B[prev], &B[newOffset])
+			}
 			index, offset = index+1, offset+1
 		}
 		wg.Done()
