@@ -47,3 +47,9 @@ func processBlockVX(out, in1, in2 *block, xor bool) {
 		mixBlocksVX(out, in1, in2, &t)
 	}
 }
+
+func processBlockXORMid(out, in1, in2 *block, scratch *scratchBlock, xor bool, mid func()) {
+	processBlockXORMidGeneric(out, in1, in2, xor, mid)
+}
+
+func prefetchBlock(b *block) {}

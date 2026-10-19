@@ -24,7 +24,27 @@ var (
 
 func TestArgon2(t *testing.T) {
 	defer func(sse4 bool) { useSSE4 = sse4 }(useSSE4)
+	defer func(avx2 bool) { useAVX2 = avx2 }(useAVX2)
+	defer func(avx512 bool) { useAVX512 = avx512 }(useAVX512)
 	defer func(lsx bool) { useLSX = lsx }(useLSX)
+
+	if useAVX512 {
+		t.Log("AVX512 version")
+		testArgon2i(t)
+		testArgon2d(t)
+		testArgon2id(t)
+		TestVectors(t)
+		useAVX512 = false
+	}
+
+	if useAVX2 {
+		t.Log("AVX2 version")
+		testArgon2i(t)
+		testArgon2d(t)
+		testArgon2id(t)
+		TestVectors(t)
+		useAVX2 = false
+	}
 
 	if useSSE4 {
 		t.Log("SSE4.1 version")
@@ -128,6 +148,7 @@ func BenchmarkArgon2d(b *testing.B) {
 }
 
 func BenchmarkArgon2id(b *testing.B) {
+	b.Run(" Time: 1, Memory: 46 MB, Threads: 1", func(b *testing.B) { benchmarkArgon2(argon2id, 1, 46*1024, 1, 32, b) })
 	b.Run(" Time: 3, Memory: 32 MB, Threads: 1", func(b *testing.B) { benchmarkArgon2(argon2id, 3, 32*1024, 1, 32, b) })
 	b.Run(" Time: 4, Memory: 32 MB, Threads: 1", func(b *testing.B) { benchmarkArgon2(argon2id, 4, 32*1024, 1, 32, b) })
 	b.Run(" Time: 5, Memory: 32 MB, Threads: 1", func(b *testing.B) { benchmarkArgon2(argon2id, 5, 32*1024, 1, 32, b) })

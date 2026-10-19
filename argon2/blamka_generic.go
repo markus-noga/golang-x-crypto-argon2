@@ -6,6 +6,34 @@ package argon2
 
 var useSSE4 bool
 
+// useAVX2 reports whether the amd64 AVX2 implementation should be used.
+var useAVX2 bool
+
+// useAVX512 reports whether the amd64 AVX-512 implementation should be used.
+// It takes precedence over useAVX2.
+var useAVX512 bool
+
+// scratchBlock is the scratch space of the implementations that split the
+// computation of a block in two stages. It has room for a block aligned to 64
+// bytes, which the assembly aligns itself to (a Go value is only 8-byte
+// aligned).
+type scratchBlock [blockLength + 8]uint64
+
+// prefetchDist is how many blocks ahead the reference block is prefetched in
+// data-independent mode, where the addresses are known in advance.
+const prefetchDist = 2
+
+// processBlockXORMidGeneric is the processBlockXORMid fallback for
+// implementations that cannot split the computation.
+func processBlockXORMidGeneric(out, in1, in2 *block, xor bool, mid func()) {
+	if xor {
+		processBlockXOR(out, in1, in2)
+	} else {
+		processBlock(out, in1, in2)
+	}
+	mid()
+}
+
 // useLSX reports whether the loong64 LSX vector implementation should be
 // used. It is set from cpu.Loong64.HasLSX in blamka_loong64.go's init().
 var useLSX bool
